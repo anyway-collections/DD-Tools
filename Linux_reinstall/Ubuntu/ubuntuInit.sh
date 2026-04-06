@@ -24,6 +24,8 @@ distYearsNum=$(grep "ubuntuDigital" $confFile | awk '{print $2}' | cut -d'.' -f 
 TimeZone1=$(grep "TimeZone" $confFile | awk '{print $2}' | cut -d'/' -f 1)
 TimeZone2=$(grep "TimeZone" $confFile | awk '{print $2}' | cut -d'/' -f 2)
 tmpWORD=$(grep -w "tmpWORD" $confFile | awk '{print $2}')
+sshPublicKeyB64=$(grep "sshPublicKeyB64" $confFile | awk '{print $2}')
+allowRootPasswordLogin=$(grep "allowRootPasswordLogin" $confFile | awk '{print $2}')
 sshPORT=$(grep "sshPORT" $confFile | awk '{print $2}')
 networkAdapter=$(grep "networkAdapter" $confFile | awk '{print $2}')
 IPv4=$(grep "IPv4" $confFile | awk '{print $2}')
@@ -52,6 +54,36 @@ targetLinuxSecurityMirror=$(grep "targetLinuxSecurityMirror" $confFile | awk '{p
 cloudInitUrl=$(grep "cloudInitUrl" $confFile | awk '{print $2}')
 setFail2banStatus=$(grep "setFail2banStatus" $confFile | awk '{print $2}')
 serialConsolePropertiesForGrub=$(grep "serialConsolePropertiesForGrub" $confFile | sed -e 's/serialConsolePropertiesForGrub  //g')
+
+add_root_ssh_key_to_cloud_init() {
+	[ -z "$sshPublicKeyB64" ] && return 0
+	sshPublicKey=$(printf '%s' "$sshPublicKeyB64" | base64 -d)
+	awk -v key="$sshPublicKey" '
+		/shell: \/bin\/bash/ && !done {
+			print
+			print "    ssh_authorized_keys:"
+			print "      - " key
+			done=1
+			next
+		}
+		{ print }
+	' "$cloudInitFile" > "$cloudInitFile.tmp" && mv "$cloudInitFile.tmp" "$cloudInitFile"
+}
+
+disable_root_password_login_in_cloud_init() {
+	awk '
+		/^chpasswd:/ { skip=1; next }
+		skip && /^# configure network/ { skip=0; print; next }
+		skip { next }
+		{ print }
+	' "$cloudInitFile" > "$cloudInitFile.tmp" && mv "$cloudInitFile.tmp" "$cloudInitFile"
+	sed -ri 's/lock_passwd: false/lock_passwd: true/g' "$cloudInitFile"
+	if grep -q '^ssh_pwauth:' "$cloudInitFile"; then
+		sed -ri 's/^ssh_pwauth:.*/ssh_pwauth: false/g' "$cloudInitFile"
+	else
+		sed -i '/^datasource_list:/a ssh_pwauth: false' "$cloudInitFile"
+	fi
+}
 
 # Reset configurations of repositories.
 true >/etc/apk/repositories
@@ -130,7 +162,7 @@ wget --no-check-certificate -qO $cloudInitFile ''$cloudInitUrl''
 # User config.
 sed -ri 's/sshPORT/'${sshPORT}'/g' $cloudInitFile
 sed -ri 's/HostName/'${HostName}'/g' $cloudInitFile
-sed -ri 's/tmpWORD/'${tmpWORD}'/g' $cloudInitFile
+[[ -n "$tmpWORD" ]] && sed -ri 's/tmpWORD/'${tmpWORD}'/g' $cloudInitFile
 sed -ri 's/TimeZone/'${TimeZone1}'\/'${TimeZone2}'/g' $cloudInitFile
 sed -ri 's/targetLinuxMirror/'${targetLinuxMirror}'/g' $cloudInitFile
 sed -ri 's/targetLinuxSecurityMirror/'${targetLinuxSecurityMirror}'/g' $cloudInitFile
@@ -155,6 +187,8 @@ fi
 sed -ri 's/ip6Gate/'${ip6Gate}'/g' $cloudInitFile
 sed -ri 's/ip6DNS1/'${ip6DNS1}'/g' $cloudInitFile
 sed -ri 's/ip6DNS2/'${ip6DNS2}'/g' $cloudInitFile
+add_root_ssh_key_to_cloud_init
+[[ "$allowRootPasswordLogin" != "1" ]] && disable_root_password_login_in_cloud_init
 
 # Disable any datahouse.
 # Reference: https://github.com/canonical/cloud-init/issues/3772
@@ -166,9 +200,14 @@ echo 'datasource_list: [ NoCloud, None ]' >/mnt/etc/cloud/cloud.cfg.d/90_dpkg.cf
 rm -rf /mnt/etc/systemd/system/ssh.service.d/*.conf
 sed -ri 's#^Include /etc/ssh/sshd_config.d/#\#Include /etc/ssh/sshd_config.d/#g' /mnt/etc/ssh/sshd_config
 
-# Permit root user login by password, change ssh port.
-sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/g' /mnt/etc/ssh/sshd_config
-sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/g' /mnt/etc/ssh/sshd_config
+# Apply root login policy, change ssh port.
+if [[ "$allowRootPasswordLogin" == "1" ]]; then
+	sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/g' /mnt/etc/ssh/sshd_config
+	sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/g' /mnt/etc/ssh/sshd_config
+else
+	sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin prohibit-password/g' /mnt/etc/ssh/sshd_config
+	sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication no/g' /mnt/etc/ssh/sshd_config
+fi
 sed -ri 's/^#?Port.*/Port '${sshPORT}'/g' /mnt/etc/ssh/sshd_config
 # Change ssh port for service of "ssh.socket".
 # https://askubuntu.com/questions/1439461/ssh-default-port-not-changing-ubuntu-22-10

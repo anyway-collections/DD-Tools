@@ -2,7 +2,7 @@
 ##
 ## License: GPL
 ## It can reinstall Debian, Ubuntu, Kali, AlpineLinux, CentOS, AlmaLinux, RockyLinux, Fedora and Windows OS via network automatically without any other external measures and manual operations.
-## Default root password: LeitboGi0ro
+## Default Linux access: SSH key only unless explicitly overridden
 ## Written By MoeClub.org
 ## Blog: https://moeclub.org
 ## Modified By 秋水逸冰
@@ -92,6 +92,11 @@ export setAutoConfig='1'
 export FirmwareImage=''
 export AddNum='1'
 export DebianModifiedProcession=''
+export sshPublicKey=''
+export sshPublicKeyB64=''
+export allowRootPasswordLogin='0'
+export allowInsecureDownloads='0'
+export installerOnlyPassword=''
 
 while [[ $# -ge 1 ]]; do
 	case $1 in
@@ -345,6 +350,24 @@ while [[ $# -ge 1 ]]; do
 		shift
 		enableBBR="1"
 		;;
+	--ssh-key)
+		shift
+		sshPublicKey="$1"
+		shift
+		;;
+	--ssh-key-file)
+		shift
+		sshPublicKey=$(cat "$1" 2>/dev/null)
+		shift
+		;;
+	--allow-root-password-login)
+		shift
+		allowRootPasswordLogin='1'
+		;;
+	--allow-insecure-downloads)
+		shift
+		allowInsecureDownloads='1'
+		;;
 	--allbymyself)
 		shift
 		setAutoConfig='0'
@@ -360,7 +383,7 @@ while [[ $# -ge 1 ]]; do
 		;;
 	*)
 		if [[ "$1" != 'error' ]]; then echo -ne "\nInvaild option: '$1'\n\n"; fi
-		echo -ne " Usage:\n\tbash $(basename $0)\t-debian          [${underLine}${yellow}dists-name${plain}]\n\t\t\t\t-ubuntu          [${underLine}dists-name${plain}]\n\t\t\t\t-kali            [${underLine}dists-name${plain}]\n\t\t\t\t-alpine          [${underLine}dists-name${plain}]\n\t\t\t\t-centos          [${underLine}dists-name${plain}]\n\t\t\t\t-rockylinux      [${underLine}dists-name${plain}]\n\t\t\t\t-almalinux       [${underLine}dists-name${plain}]\n\t\t\t\t-fedora          [${underLine}dists-name${plain}]\n\t\t\t\t-windows         [${underLine}dists-name${plain}]\n\t\t\t\t-architecture    [32/i386|64/${underLine}${yellow}amd64${plain}|arm/${underLine}${yellow}arm64${plain}]\n\t\t\t\t--ip-addr/--ip-gate/--ip-mask\n\t\t\t\t-apt/-yum/-mirror\n\t\t\t\t-dd/--image      [image-url]\n\t\t\t\t-pwd             [linux-password]\n\t\t\t\t-port            [linux-ssh-port]\n"
+		echo -ne " Usage:\n\tbash $(basename $0)\t-debian          [${underLine}${yellow}dists-name${plain}]\n\t\t\t\t-ubuntu          [${underLine}dists-name${plain}]\n\t\t\t\t-kali            [${underLine}dists-name${plain}]\n\t\t\t\t-alpine          [${underLine}dists-name${plain}]\n\t\t\t\t-centos          [${underLine}dists-name${plain}]\n\t\t\t\t-rockylinux      [${underLine}dists-name${plain}]\n\t\t\t\t-almalinux       [${underLine}dists-name${plain}]\n\t\t\t\t-fedora          [${underLine}dists-name${plain}]\n\t\t\t\t-windows         [${underLine}dists-name${plain}]\n\t\t\t\t-architecture    [32/i386|64/${underLine}${yellow}amd64${plain}|arm/${underLine}${yellow}arm64${plain}]\n\t\t\t\t--ip-addr/--ip-gate/--ip-mask\n\t\t\t\t-apt/-yum/-mirror\n\t\t\t\t-dd/--image      [image-url]\n\t\t\t\t--ssh-key        [public-key]\n\t\t\t\t--ssh-key-file   [path-to-public-key]\n\t\t\t\t-pwd             [linux-password]\n\t\t\t\t--allow-root-password-login\n\t\t\t\t-port            [linux-ssh-port]\n"
 		exit 1
 		;;
 	esac
@@ -3163,8 +3186,9 @@ d-i debian-installer/exit/reboot boolean true
 ### Write preseed
 d-i preseed/late_command string	\
 sed -ri 's/^#?Port.*/Port ${sshPORT}/g' /target/etc/ssh/sshd_config; \
-sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin yes/g' /target/etc/ssh/sshd_config; \
-sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication yes/g' /target/etc/ssh/sshd_config; \
+sed -ri 's/^#?PermitRootLogin.*/PermitRootLogin ${RootLoginDirective}/g' /target/etc/ssh/sshd_config; \
+sed -ri 's/^#?PasswordAuthentication.*/PasswordAuthentication ${PasswordAuthDirective}/g' /target/etc/ssh/sshd_config; \
+${AuthorizedKeysSetup}\
 echo '@reboot root cat /etc/run.sh 2>/dev/null |base64 -d >/tmp/run.sh; rm -rf /etc/run.sh; sed -i /^@reboot/d /etc/crontab; bash /tmp/run.sh' >>/target/etc/crontab; \
 echo '' >>/target/etc/crontab; \
 echo '${setCMD}' >/target/etc/run.sh; \
@@ -3205,6 +3229,10 @@ function alpineInstallOrDdAdditionalFiles() {
 function verifyUrlValidationOfDdImages() {
 	echo "$1" | grep -q '^http://\|^ftp://\|^https://'
 	[[ $? -ne '0' ]] && echo -ne "\n[${red}Error${plain}] Please input a vaild URL, only support http://, ftp:// and https:// ! \n" && exit 1
+	[[ "$allowInsecureDownloads" != '1' ]] && {
+		echo "$1" | grep -q '^https://'
+		[[ $? -ne '0' ]] && echo -ne "\n[${red}Error${plain}] Refusing insecure DD image URL. Use HTTPS or pass '--allow-insecure-downloads' explicitly.\n" && exit 1
+	}
 	tmpURLCheck=$(echo $(curl -s -I -X GET $1) | grep -wi "http/[0-9]*" | awk '{print $2}')
 	[[ -z "$tmpURLCheck" || ! "$tmpURLCheck" =~ ^[0-9]+$ ]] && {
 		echo -ne "\n[${red}Error${plain}] The mirror of DD images is temporarily unavailable!\n"
@@ -3272,6 +3300,41 @@ linux_relese=$(echo "$Relese" | sed 's/\ //g' | sed -r 's/(.*)/\L\1/')
 	[ "$targetRelese" == 'Ubuntu' ] && finalDIST='22.04'
 	[ "$targetRelese" == 'Windows' ] && finalDIST='11'
 }
+
+sshPublicKey=$(printf '%s' "$sshPublicKey" | tr -d '\r' | sed '/^[[:space:]]*$/d' | head -n 1)
+targetIsWindows='0'
+if [[ "$targetRelese" == 'Windows' ]]; then
+	targetIsWindows='1'
+fi
+targetHasManagedLinuxAccess='1'
+if [[ -z "$targetRelese" && "$ddMode" == '1' ]]; then
+	targetHasManagedLinuxAccess='0'
+fi
+if [[ "$targetIsWindows" != '1' && "$targetHasManagedLinuxAccess" == '1' ]]; then
+	if [[ "$allowRootPasswordLogin" == '1' ]]; then
+		[[ -z "$tmpWORD" ]] && {
+			echo -ne "\n[${red}Error${plain}] '--allow-root-password-login' requires '-pwd'.\n\n"
+			exit 1
+		}
+	else
+		[[ -z "$sshPublicKey" ]] && {
+			echo -ne "\n[${red}Error${plain}] Linux reinstall now requires '--ssh-key' or '--ssh-key-file' unless you explicitly opt in to '--allow-root-password-login -pwd'.\n\n"
+			exit 1
+		}
+	fi
+fi
+[[ -n "$sshPublicKey" ]] && sshPublicKeyB64=$(printf '%s' "$sshPublicKey" | base64 | tr -d '\n')
+if [[ "$allowRootPasswordLogin" == '1' ]]; then
+	RootLoginDirective='yes'
+	PasswordAuthDirective='yes'
+else
+	RootLoginDirective='prohibit-password'
+	PasswordAuthDirective='no'
+fi
+AuthorizedKeysSetup=""
+if [[ -n "$sshPublicKeyB64" ]]; then
+	AuthorizedKeysSetup="install -d -m 700 /target/root/.ssh; printf '%s' '${sshPublicKeyB64}' | base64 -d >/target/root/.ssh/authorized_keys; chmod 600 /target/root/.ssh/authorized_keys; "
+fi
 
 checkVER
 if [[ -n "$tmpDIST" ]]; then
@@ -3490,14 +3553,19 @@ echo "$TimeZone"
 echo -ne "\n${aoiBlue}# Hostname${plain}\n\n"
 echo "$HostName"
 
-if [[ -z "$tmpWORD" || "$linux_relese" == 'alpinelinux' ]]; then
-	tmpWORD='LeitboGi0ro'
-	myPASSWORD='$6$qE9Lqgrd0QTOq46i$YMECmKvIw2SeBP4X411I0ZWmtyMsRcBi4Rxu7HYRsqdwqSApi6zjds5UJyM4HrAoBcuLBmjPyLatGydulmCDb0'
-else
+if [[ "$targetIsWindows" == '1' ]]; then
+	tmpWORD=''
+	myPASSWORD=''
+elif [[ "$allowRootPasswordLogin" == '1' && "$linux_relese" != 'alpinelinux' ]]; then
 	# "-1" is MD5, "-5" is SHA256, "-6" is SHA512. MD5 is no longer secure.
 	myPASSWORD=$(openssl passwd -6 ''$tmpWORD'' 2>/dev/null)
 	# Version 1.0.2k of openssl in CentOS 7 is too old that it's only support MD5, the same as Debian 9.
 	[[ -z "$myPASSWORD" || "$myPASSWORD" =~ "NULL" ]] && myPASSWORD=$(openssl passwd -1 ''$tmpWORD'')
+else
+	installerOnlyPassword=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 32)
+	myPASSWORD=$(openssl passwd -6 ''$installerOnlyPassword'' 2>/dev/null)
+	[[ -z "$myPASSWORD" || "$myPASSWORD" =~ "NULL" ]] && myPASSWORD=$(openssl passwd -1 ''$installerOnlyPassword'')
+	tmpWORD=''
 fi
 
 echo -ne "\n${aoiBlue}# SSH or RDP Port, Username and Password${plain}\n\n"
@@ -3510,8 +3578,16 @@ elif [[ -z "$targetRelese" && "$ddMode" == '1' ]]; then
 else
 	echo "$sshPORT"
 	echo "root"
-	echo "$tmpWORD"
+	[[ "$allowRootPasswordLogin" == '1' ]] && echo "$tmpWORD" || echo "SSH key only"
 fi
+
+echo -ne "\n${aoiBlue}# Remote Access Policy${plain}\n\n"
+[[ "$targetIsWindows" == '1' ]] && {
+	echo "Windows RDP image defaults unchanged."
+} || {
+	[[ -n "$sshPublicKey" ]] && echo "SSH public key configured."
+	[[ "$allowRootPasswordLogin" == '1' ]] && echo "Root password login explicitly enabled." || echo "Root password SSH login disabled."
+}
 
 setDisk=$(echo "$setDisk" | sed 's/[A-Z]/\l&/g')
 getDisk "$setDisk" "$linux_relese"
@@ -4184,6 +4260,10 @@ echo "TimeZone  "${TimeZone} >> \$sysroot/root/alpine.config
 # To determine root password.
 echo 'tmpWORD  '$tmpWORD'' >> \$sysroot/root/alpine.config
 
+# To determine root ssh key and password policy.
+echo "sshPublicKeyB64  "${sshPublicKeyB64} >> \$sysroot/root/alpine.config
+echo "allowRootPasswordLogin  "${allowRootPasswordLogin} >> \$sysroot/root/alpine.config
+
 # To determine ssh port.
 echo "sshPORT  "${sshPORT} >> \$sysroot/root/alpine.config
 
@@ -4370,8 +4450,8 @@ ${RepoExtras}
 ${RepoUpdates}
 ${RepoEverything}
 
-# Root password
-rootpw --iscrypted ${myPASSWORD}
+	# Root password
+	rootpw --iscrypted ${myPASSWORD}
 
 # System authorization information
 ${AuthMethod}
@@ -4443,11 +4523,17 @@ dnf install bind-utils curl file lrzsz net-tools vim wget xz -y
 # Disable selinux
 sed -ri "/^#?SELINUX=.*/c\SELINUX=disabled" /etc/selinux/config
 
-# Allow password login
-sed -ri "/^#?PermitRootLogin.*/c\PermitRootLogin yes" /etc/ssh/sshd_config
-sed -ri "/^#?PasswordAuthentication.*/c\PasswordAuthentication yes" /etc/ssh/sshd_config
+# Root login policy
+sed -ri "/^#?PermitRootLogin.*/c\PermitRootLogin ${RootLoginDirective}" /etc/ssh/sshd_config
+sed -ri "/^#?PasswordAuthentication.*/c\PasswordAuthentication ${PasswordAuthDirective}" /etc/ssh/sshd_config
 # Change ssh port
 sed -ri "/^#?Port.*/c\Port ${sshPORT}" /etc/ssh/sshd_config
+# Add SSH authorized key for root when provided.
+if [[ -n "${sshPublicKeyB64}" ]]; then
+	install -d -m 700 /root/.ssh
+	printf '%s' "${sshPublicKeyB64}" | base64 -d >/root/.ssh/authorized_keys
+	chmod 600 /root/.ssh/authorized_keys
+fi
 # Enable ssh service
 systemctl enable sshd
 systemctl restart sshd

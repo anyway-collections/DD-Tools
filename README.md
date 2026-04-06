@@ -33,30 +33,31 @@ Alpine Linux:
 <pre><code>apk add bash wget</code></pre>
 <pre><code>sed -i 's/root:\/bin\/ash/root:\/bin\/bash/g' /etc/passwd</code></pre>
 
-## Download:
-<pre><code>wget --no-check-certificate -qO InstallNET.sh 'https://raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh' && chmod a+x InstallNET.sh</code></pre>
-Servers in mainland of China:
-<pre><code>wget --no-check-certificate -qO InstallNET.sh 'https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh' && chmod a+x InstallNET.sh</code></pre>
+## Download
+Clone this repository locally on a trusted machine and review the script before running it as root.
+<pre><code>git clone https://github.com/leitbogioro/Tools.git
+cd Tools/Linux_reinstall
+chmod a+x InstallNET.sh</code></pre>
 
 ## Quickly start
 If you need to add other parameters, a certain name of distributions must be assigned!
 ### Debian 13
-<pre><code>bash InstallNET.sh -debian</code></pre>
+<pre><code>bash InstallNET.sh -debian --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### Kali Rolling
-<pre><code>bash InstallNET.sh -kali</code></pre>
+<pre><code>bash InstallNET.sh -kali --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### Alpine Linux Edge
-<pre><code>bash InstallNET.sh -alpine</code></pre>
+<pre><code>bash InstallNET.sh -alpine --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 <b>Alpine Linux is a kind of light Linux release and it's friendly to those machines that have lower performance, system memory at least 256MB is necessary.</b>
 ### CentOS 9 stream
-<pre><code>bash InstallNET.sh -centos</code></pre>
+<pre><code>bash InstallNET.sh -centos --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### AlmaLinux 9
-<pre><code>bash InstallNET.sh -almalinux</code></pre>
+<pre><code>bash InstallNET.sh -almalinux --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### RockyLinux 9
-<pre><code>bash InstallNET.sh -rockylinux</code></pre>
+<pre><code>bash InstallNET.sh -rockylinux --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### Fedora 43
-<pre><code>bash InstallNET.sh -fedora</code></pre>
+<pre><code>bash InstallNET.sh -fedora --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### Ubuntu 22.04
-<pre><code>bash InstallNET.sh -ubuntu</code></pre>
+<pre><code>bash InstallNET.sh -ubuntu --ssh-key-file ~/.ssh/id_ed25519.pub</code></pre>
 ### Windows 11 Pro for Workstations
 <pre><code>bash InstallNET.sh -windows</code></pre>
 
@@ -68,7 +69,7 @@ For Linux: root
 <br />
 For Windows: Administrator
 ### Default password
-For Linux: LeitboGi0ro
+For Linux: none by default. The installer now expects an SSH public key for Linux reinstalls.
 <br />
 <br />
 For Windows: Teddysun.com
@@ -76,7 +77,7 @@ For Windows: Teddysun.com
 For Linux: The same as the former system which you were connected by terminal.
 <br />
 <br />
-<b>If you didn't assign any other ssh password or port, after system installation, you must change the default password immediately or switch to ssh key login to prevent unauthorized access!</b>
+<b>Linux reinstalls now default to key-based root access with password authentication disabled. If you intentionally need password login, pass both "-pwd" and "--allow-root-password-login".</b>
 <br />
 <br />
 For Windows: 3389
@@ -150,7 +151,19 @@ This option is to set language of dd images of Windows like: -windows 10 -lang "
 <br />
 <br />
 
-**-pwd/-password ''**: you can pre-specify ssh password for target installing system. Native installation methods for Redhat series, Debian/Kali could be supported, not suitable for AlpineLinux and those OS which will be installed by "Overwriting Packaged Image Mode"(dd) method like Ubuntu, Windows and Redhat installations(only in environments of low memory capacity). A couple of apostrophe includes between the whole password is recommend, if there is one and more apostrophes in the password, you should use " '\ " to replace the original apostrophe to prevent it's could not be expressed and handled correctly in the shell! **default is 'LeitboGi0ro'**.
+**--ssh-key 'ssh-ed25519 ...' / --ssh-key-file '/path/to/key.pub'**: strongly recommended for Linux reinstalls. Root SSH access is configured as key-only by default.
+<br />
+<br />
+
+**-pwd/-password ''**: you can pre-specify ssh password for target installing system, but Linux password login is now disabled by default. If you intentionally need root password SSH access, combine this with **--allow-root-password-login**. Native installation methods for Redhat series, Debian/Kali could be supported, not suitable for AlpineLinux and those OS which will be installed by "Overwriting Packaged Image Mode"(dd) method like Ubuntu, Windows and Redhat installations(only in environments of low memory capacity).
+<br />
+<br />
+
+**--allow-root-password-login**: opt in to the previous less secure behavior for Linux targets. This enables root password SSH login and requires **-pwd** to be set explicitly.
+<br />
+<br />
+
+**--allow-insecure-downloads**: allow non-HTTPS DD image URLs. This is disabled by default for safety.
 <br />
 <br />
 
